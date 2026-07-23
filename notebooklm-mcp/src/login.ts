@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import readline from "node:readline";
 import { chromium } from "playwright";
 import { NOTEBOOKLM_URL, PROFILE_DIR } from "./config.js";
 
@@ -66,14 +67,25 @@ async function main() {
   });
   const page = context.pages()[0] ?? (await context.newPage());
   await page.goto(NOTEBOOKLM_URL);
+  await page.waitForLoadState("networkidle");
 
   console.log("");
   console.log("If your notebook list loaded without a sign-in prompt, you're done.");
-  console.log("Press Enter in this terminal to finish...");
 
+  // Discard any input left over in the terminal's buffer (e.g. a stray
+  // Enter from an earlier command) so it can't be mistaken for the
+  // confirmation prompt below and close the browser before you've looked.
+  process.stdin.resume();
+  while (process.stdin.read() !== null) {
+    // drain
+  }
+  process.stdin.pause();
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   await new Promise<void>((resolve) => {
-    process.stdin.once("data", () => resolve());
+    rl.question("Press Enter in this terminal to finish... ", () => resolve());
   });
+  rl.close();
 
   await context.close();
   process.exit(0);
