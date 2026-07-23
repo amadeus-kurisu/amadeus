@@ -27,6 +27,27 @@ function findRealChromeUserDataDir(): string {
   return path.join(os.homedir(), ".config", "google-chrome");
 }
 
+// Chrome's "User Data" directory can hold several profiles (Default,
+// "Profile 1", "Profile 2", ...). Local State records which ones are
+// actually signed in to a Google account, so we can pick the right one
+// instead of assuming "Default".
+function findSignedInProfileDirName(userDataDir: string): string {
+  const localStatePath = path.join(userDataDir, "Local State");
+  try {
+    const localState = JSON.parse(fs.readFileSync(localStatePath, "utf-8"));
+    const infoCache: Record<string, { user_name?: string; gaia_name?: string }> =
+      localState?.profile?.info_cache ?? {};
+    for (const [dirName, info] of Object.entries(infoCache)) {
+      if (info.user_name || info.gaia_name) {
+        return dirName;
+      }
+    }
+  } catch {
+    // fall through to default
+  }
+  return "Default";
+}
+
 function copyDir(src: string, dest: string): void {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
@@ -52,18 +73,33 @@ async function main() {
     process.exit(1);
   }
 
+  const profileDirName = findSignedInProfileDirName(sourceDir);
+
   console.log(`Copying Chrome profile from ${sourceDir}`);
   console.log(`                        to ${PROFILE_DIR}`);
+  console.log(`Using Chrome profile "${profileDirName}" (auto-detected as signed in to Google).`);
+  console.log("If that's the wrong profile, close Chrome and re-run after switching to the");
+  console.log("right one, or check chrome://version -> Profile Path in your everyday Chrome.");
   console.log("Make sure Chrome is fully closed, or some files may be skipped.");
   console.log("");
 
   fs.rmSync(PROFILE_DIR, { recursive: true, force: true });
   copyDir(sourceDir, PROFILE_DIR);
+  fs.writeFileSync(path.join(PROFILE_DIR, "profile-directory-name.txt"), profileDirName);
+
+  const cookiesFile = path.join(PROFILE_DIR, profileDirName, "Network", "Cookies");
+  if (!fs.existsSync(cookiesFile)) {
+    console.log("");
+    console.log(`Warning: no cookie database found at ${cookiesFile}.`);
+    console.log("Chrome likely still had this profile open (locked files get skipped).");
+    console.log("Close every Chrome window completely and re-run `npm run login`.");
+  }
 
   console.log("Opening NotebookLM with the copied profile to verify it's signed in...");
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     channel: "chrome",
     headless: false,
+    args: [`--profile-directory=${profileDirName}`],
   });
   const page = context.pages()[0] ?? (await context.newPage());
   await page.goto(NOTEBOOKLM_URL);

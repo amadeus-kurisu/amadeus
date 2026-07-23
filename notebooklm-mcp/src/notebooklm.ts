@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { chromium, type BrowserContext, type Page } from "playwright";
 import { HEADLESS, NOTEBOOKLM_URL, PROFILE_DIR } from "./config.js";
 
@@ -16,9 +17,15 @@ async function getContext(): Promise<BrowserContext> {
     throw new Error(`No Chrome profile found at ${PROFILE_DIR}. Run \`npm run login\` first.`);
   }
 
+  const profileDirNameFile = path.join(PROFILE_DIR, "profile-directory-name.txt");
+  const profileDirName = fs.existsSync(profileDirNameFile)
+    ? fs.readFileSync(profileDirNameFile, "utf-8").trim()
+    : "Default";
+
   context = await chromium.launchPersistentContext(PROFILE_DIR, {
     channel: "chrome",
     headless: HEADLESS,
+    args: [`--profile-directory=${profileDirName}`],
   });
   return context;
 }
