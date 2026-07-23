@@ -1,27 +1,25 @@
 import fs from "node:fs";
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { HEADLESS, NOTEBOOKLM_URL, STORAGE_STATE_PATH } from "./config.js";
+import { chromium, type BrowserContext, type Page } from "playwright";
+import { HEADLESS, NOTEBOOKLM_URL, PROFILE_DIR } from "./config.js";
 
 // This talks to NotebookLM by driving its web UI, since Google does not
 // publish a NotebookLM API. It is inherently brittle: Google can change
 // the page's markup at any time, which will break the selectors below.
 // Treat this as a starting point to patch up, not a finished integration.
 
-let browser: Browser | undefined;
 let context: BrowserContext | undefined;
 
 async function getContext(): Promise<BrowserContext> {
   if (context) return context;
 
-  if (!fs.existsSync(STORAGE_STATE_PATH)) {
-    throw new Error(
-      `No saved NotebookLM session found at ${STORAGE_STATE_PATH}. ` +
-        "Run `npm run login` first and sign in.",
-    );
+  if (!fs.existsSync(PROFILE_DIR)) {
+    throw new Error(`No Chrome profile found at ${PROFILE_DIR}. Run \`npm run login\` first.`);
   }
 
-  browser = await chromium.launch({ headless: HEADLESS });
-  context = await browser.newContext({ storageState: STORAGE_STATE_PATH });
+  context = await chromium.launchPersistentContext(PROFILE_DIR, {
+    channel: "chrome",
+    headless: HEADLESS,
+  });
   return context;
 }
 
@@ -78,7 +76,5 @@ export async function askNotebook(notebookName: string, question: string): Promi
 
 export async function closeBrowser(): Promise<void> {
   await context?.close();
-  await browser?.close();
   context = undefined;
-  browser = undefined;
 }
